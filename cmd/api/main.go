@@ -19,6 +19,8 @@ import (
 	"be-fittracker/internal/config"
 	"be-fittracker/internal/database"
 	appmiddleware "be-fittracker/internal/middleware"
+	authmodule "be-fittracker/internal/modules/auth"
+	habitmodule "be-fittracker/internal/modules/habit"
 	"be-fittracker/internal/utils"
 )
 
@@ -42,6 +44,7 @@ func main() {
 
 	logger.Info("postgres connected")
 	defer conn.Close(context.Background())
+	db := database.NewLockedConn(conn)
 
 	logger.Info("connecting to redis")
 	redisClient, err := database.OpenRedis(ctx, cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
@@ -67,6 +70,16 @@ func main() {
 		r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 			utils.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 		})
+
+		authRepo := authmodule.NewRepository(db)
+		authService := authmodule.NewService(authRepo, cfg.JWTSecret)
+		authHandler := authmodule.NewHandler(authService, cfg.JWTSecret)
+		r.Mount("/auth", authHandler.Routes())
+
+		habitRepo := habitmodule.NewRepository(db)
+		habitService := habitmodule.NewService(habitRepo)
+		habitHandler := habitmodule.NewHandler(habitService)
+		r.Mount("/habits", habitHandler.Routes(cfg.JWTSecret))
 	})
 
 	server := &http.Server{

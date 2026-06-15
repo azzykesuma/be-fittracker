@@ -55,9 +55,17 @@ Planned MVP modules:
 - Workouts: plans, exercises, sessions, set logs
 - Progress: dashboard aggregates, body weight logs, chart data
 
+Implemented endpoint docs are in `API.md`.
+
 ## Environment Variables
 
 See `.env.example` for defaults.
+
+Auth password encryption requires an RSA keypair:
+
+- Backend: `AUTH_PASSWORD_PRIVATE_KEY` contains the PEM PKCS8 RSA private key.
+- Frontend: `NEXT_PUBLIC_AUTH_PASSWORD_PUBLIC_KEY` contains the matching PEM public key.
+- Register/login payloads must send `password_encrypted` and `password_alg: "RSA-OAEP-SHA256"`; raw `password` is not accepted.
 
 ## Notes
 

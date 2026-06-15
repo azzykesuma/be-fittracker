@@ -10,30 +10,34 @@ import (
 )
 
 type Config struct {
-	Env                string
-	HTTPAddr           string
-	DatabaseURL        string
-	RedisAddr          string
-	RedisPassword      string
-	RedisDB            int
-	CORSAllowedOrigins []string
-	SupabaseURL        string
-	SupabaseSecretKey  string
+	Env                    string
+	HTTPAddr               string
+	DatabaseURL            string
+	RedisAddr              string
+	RedisPassword          string
+	RedisDB                int
+	CORSAllowedOrigins     []string
+	SupabaseURL            string
+	SupabaseSecretKey      string
+	JWTSecret              string
+	AuthPasswordPrivateKey string
 }
 
 func Load() Config {
 	_ = godotenv.Load()
 
 	return Config{
-		Env:                getEnv("APP_ENV", "development"),
-		HTTPAddr:           getEnv("HTTP_ADDR", ":8080"),
-		DatabaseURL:        normalizeDatabaseURL(getEnv("DATABASE_URL", "postgres://fitflow:fitflow_password@localhost:5432/fitflow_db?sslmode=disable")),
-		RedisAddr:          getEnv("REDIS_ADDR", "localhost:6379"),
-		RedisPassword:      getEnv("REDIS_PASSWORD", ""),
-		RedisDB:            getEnvInt("REDIS_DB", 0),
-		CORSAllowedOrigins: splitCSV(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000")),
-		SupabaseURL:        getEnv("SUPABASE_URL", ""),
-		SupabaseSecretKey:  getEnv("SUPABASE_SECRET_KEY", ""),
+		Env:                    getEnv("APP_ENV", "development"),
+		HTTPAddr:               getEnv("HTTP_ADDR", ":8080"),
+		DatabaseURL:            normalizeDatabaseURL(getEnv("DATABASE_URL", "postgres://fitflow:fitflow_password@localhost:5432/fitflow_db?sslmode=disable")),
+		RedisAddr:              getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisPassword:          getEnv("REDIS_PASSWORD", ""),
+		RedisDB:                getEnvInt("REDIS_DB", 0),
+		CORSAllowedOrigins:     splitCSV(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000")),
+		SupabaseURL:            getEnv("SUPABASE_URL", ""),
+		SupabaseSecretKey:      getEnv("SUPABASE_SECRET_KEY", ""),
+		JWTSecret:              getEnv("JWT_SECRET", "change-me-in-development"),
+		AuthPasswordPrivateKey: getEnv("AUTH_PASSWORD_PRIVATE_KEY", ""),
 	}
 }
 

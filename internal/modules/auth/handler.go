@@ -1,0 +1,114 @@
+package auth
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
+
+	appmiddleware "be-fittracker/internal/middleware"
+	"be-fittracker/internal/utils"
+)
+
+type Handler struct {
+	service   *Service
+	jwtSecret string
+}
+
+func NewHandler(service *Service, jwtSecret string) *Handler {
+	return &Handler{service: service, jwtSecret: jwtSecret}
+}
+
+func (handler *Handler) Routes() chi.Router {
+	r := chi.NewRouter()
+	r.Post("/register", handler.register)
+	r.Post("/login", handler.login)
+	r.Post("/refresh", handler.refresh)
+	r.Post("/logout", handler.logout)
+	r.With(appmiddleware.Auth(handler.jwtSecret)).Get("/me", handler.me)
+	return r
+}
+
+func (handler *Handler) register(w http.ResponseWriter, r *http.Request) {
+	var req registerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.WriteError(w, http.StatusBadRequest, "bad_request", "Invalid JSON body")
+		return
+	}
+
+	res, err := handler.service.Register(r.Context(), req)
+	if err != nil {
+		utils.WriteError(w, http.StatusBadRequest, "invalid_auth_request", "Invalid auth request")
+		return
+	}
+
+	utils.WriteJSON(w, http.StatusCreated, map[string]any{"data": res})
+}
+
+func (handler *Handler) login(w http.ResponseWriter, r *http.Request) {
+	var req loginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.WriteError(w, http.StatusBadRequest, "bad_request", "Invalid JSON body")
+		return
+	}
+
+	res, err := handler.service.Login(r.Context(), req)
+	if err != nil {
+		if errors.Is(err, ErrInvalidCredentials) || errors.Is(err, ErrInvalidAuthRequest) {
+			utils.WriteError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
+			return
+		}
+		utils.WriteError(w, http.StatusInternalServerError, "login_failed", "Login failed")
+		return
+	}
+
+	utils.WriteJSON(w, http.StatusOK, map[string]any{"data": res})
+}
+
+func (handler *Handler) refresh(w http.ResponseWriter, r *http.Request) {
+	var req refreshRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.WriteError(w, http.StatusBadRequest, "bad_request", "Invalid JSON body")
+		return
+	}
+
+	res, err := handler.service.Refresh(r.Context(), req.RefreshToken)
+	if err != nil {
+		utils.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Invalid refresh token")
+		return
+	}
+
+	utils.WriteJSON(w, http.StatusOK, map[string]any{"data": res})
+}
+
+func (handler *Handler) logout(w http.ResponseWriter, r *http.Request) {
+	var req refreshRequest
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	if err := handler.service.Logout(r.Context(), req.RefreshToken); err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, "logout_failed", "Logout failed")
+		return
+	}
+	utils.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"success": true}})
+}
+
+func (handler *Handler) me(w http.ResponseWriter, r *http.Request) {
+	userID, ok := appmiddleware.UserID(r.Context())
+	if !ok {
+		utils.WriteError(w, http.StatusUnauthorized, "unauthorized", "Missing user context")
+		return
+	}
+
+	user, err := handler.service.Me(r.Context(), userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			utils.WriteError(w, http.StatusNotFound, "not_found", "User not found")
+			return
+		}
+		utils.WriteError(w, http.StatusInternalServerError, "profile_failed", "Failed to load profile")
+		return
+	}
+
+	utils.WriteJSON(w, http.StatusOK, map[string]any{"data": user})
+}

@@ -5,6 +5,7 @@ CREATE TABLE refresh_sessions (
   expires_at TIMESTAMPTZ NOT NULL,
   revoked_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   rotated_at TIMESTAMPTZ
 );
 
