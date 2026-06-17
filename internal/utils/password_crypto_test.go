@@ -24,6 +24,20 @@ func TestDecryptPasswordRoundTrip(t *testing.T) {
 	}
 }
 
+func TestDecryptPasswordRoundTripWithQuotedEnv(t *testing.T) {
+	privateKey := testPrivateKey(t)
+	t.Setenv("AUTH_PASSWORD_PRIVATE_KEY", `"`+testPrivateKeyPEM(t, privateKey)+`"`)
+
+	ciphertext := testEncryptPassword(t, &privateKey.PublicKey, "password123")
+	password, err := DecryptPassword(ciphertext, PasswordAlgorithmRSAOAEPWithSHA256)
+	if err != nil {
+		t.Fatalf("DecryptPassword returned error: %v", err)
+	}
+	if password != "password123" {
+		t.Fatalf("expected decrypted password to match")
+	}
+}
+
 func TestDecryptPasswordInvalidAlgorithm(t *testing.T) {
 	privateKey := testPrivateKey(t)
 	t.Setenv("AUTH_PASSWORD_PRIVATE_KEY", testPrivateKeyPEM(t, privateKey))

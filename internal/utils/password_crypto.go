@@ -22,6 +22,7 @@ func LoadPasswordPrivateKeyFromEnv() (*rsa.PrivateKey, error) {
 		return nil, ErrInvalidEncryptedPassword
 	}
 
+	keyPEM = strings.Trim(keyPEM, `"'`)
 	keyPEM = strings.ReplaceAll(keyPEM, `\n`, "\n")
 	block, _ := pem.Decode([]byte(keyPEM))
 	if block == nil {
