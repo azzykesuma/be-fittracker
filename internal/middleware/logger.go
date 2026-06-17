@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
 
@@ -23,17 +24,36 @@ func RequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 			ww := &responseWriter{ResponseWriter: w, status: http.StatusOK}
+			requestID := chimiddleware.GetReqID(r.Context())
 
-			next.ServeHTTP(ww, r)
-
-			logger.Info("http_request",
+			logger.Info("api_endpoint_started",
 				"service", "fitflow-api",
 				"method", r.Method,
 				"path", r.URL.Path,
+				"request_id", requestID,
+				"remote_ip", r.RemoteAddr,
+				"user_agent", r.UserAgent(),
+			)
+
+			next.ServeHTTP(ww, r)
+
+			logger.Info("api_endpoint_completed",
+				"service", "fitflow-api",
+				"method", r.Method,
+				"path", r.URL.Path,
+				"route", routePattern(r),
 				"status", ww.status,
 				"duration_ms", time.Since(start).Milliseconds(),
-				"request_id", chimiddleware.GetReqID(r.Context()),
+				"request_id", requestID,
 			)
 		})
 	}
+}
+
+func routePattern(r *http.Request) string {
+	routeContext := chi.RouteContext(r.Context())
+	if routeContext == nil {
+		return ""
+	}
+	return routeContext.RoutePattern()
 }

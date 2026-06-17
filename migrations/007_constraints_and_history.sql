@@ -6,12 +6,6 @@ ALTER TABLE users
   ADD CONSTRAINT users_height_cm_positive CHECK (height_cm IS NULL OR height_cm > 0),
   ADD CONSTRAINT users_weight_kg_positive CHECK (weight_kg IS NULL OR weight_kg > 0);
 
-ALTER TABLE habits
-  ADD CONSTRAINT habits_target_count_positive CHECK (target_count > 0);
-
-ALTER TABLE habit_logs
-  ADD CONSTRAINT habit_logs_completed_count_non_negative CHECK (completed_count >= 0);
-
 ALTER TABLE exercises
   ADD CONSTRAINT exercises_target_sets_positive CHECK (target_sets IS NULL OR target_sets > 0),
   ADD CONSTRAINT exercises_target_reps_positive CHECK (target_reps IS NULL OR target_reps > 0),

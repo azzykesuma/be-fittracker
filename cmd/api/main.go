@@ -20,7 +20,9 @@ import (
 	"be-fittracker/internal/database"
 	appmiddleware "be-fittracker/internal/middleware"
 	authmodule "be-fittracker/internal/modules/auth"
-	habitmodule "be-fittracker/internal/modules/habit"
+	mealmodule "be-fittracker/internal/modules/meal"
+	progressmodule "be-fittracker/internal/modules/progress"
+	workoutmodule "be-fittracker/internal/modules/workout"
 	"be-fittracker/internal/utils"
 )
 
@@ -33,7 +35,7 @@ func main() {
 	defer stop()
 
 	logger.Info("connecting to postgres", databaseLogFields(cfg.DatabaseURL)...)
-	conn, err := pgx.Connect(context.Background(), os.Getenv("DATABASE_URL"))
+	conn, err := pgx.Connect(context.Background(), cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("Failed to connect to the database: %v", err)
 	}
@@ -49,11 +51,15 @@ func main() {
 	logger.Info("connecting to redis")
 	redisClient, err := database.OpenRedis(ctx, cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
 	if err != nil {
-		logger.Error("redis connection failed", "error", err)
-		os.Exit(1)
+		if cfg.RedisRequired {
+			logger.Error("redis connection failed", "error", err)
+			os.Exit(1)
+		}
+		logger.Warn("redis unavailable; continuing without redis", "error", err)
+	} else {
+		defer redisClient.Close()
+		logger.Info("redis connected")
 	}
-	defer redisClient.Close()
-	logger.Info("redis connected")
 
 	router := chi.NewRouter()
 	router.Use(middleware.RequestID)
@@ -76,10 +82,22 @@ func main() {
 		authHandler := authmodule.NewHandler(authService, cfg.JWTSecret)
 		r.Mount("/auth", authHandler.Routes())
 
-		habitRepo := habitmodule.NewRepository(db)
-		habitService := habitmodule.NewService(habitRepo)
-		habitHandler := habitmodule.NewHandler(habitService)
-		r.Mount("/habits", habitHandler.Routes(cfg.JWTSecret))
+		mealRepo := mealmodule.NewRepository(db)
+		mealService := mealmodule.NewService(mealRepo)
+		mealHandler := mealmodule.NewHandler(mealService)
+		r.Mount("/meal-logs", mealHandler.Routes(cfg.JWTSecret))
+
+		workoutRepo := workoutmodule.NewRepository(db)
+		workoutService := workoutmodule.NewService(workoutRepo)
+		workoutHandler := workoutmodule.NewHandler(workoutService)
+		r.Mount("/workout-plans", workoutHandler.PlanRoutes(cfg.JWTSecret))
+		r.Mount("/exercises", workoutHandler.ExerciseRoutes(cfg.JWTSecret))
+
+		progressRepo := progressmodule.NewRepository(db)
+		progressService := progressmodule.NewService(progressRepo)
+		progressHandler := progressmodule.NewHandler(progressService)
+		r.Mount("/progress", progressHandler.Routes(cfg.JWTSecret))
+		r.Mount("/body-measurements", progressHandler.BodyMeasurementRoutes(cfg.JWTSecret))
 	})
 
 	server := &http.Server{

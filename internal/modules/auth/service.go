@@ -106,6 +106,10 @@ func (svc *Service) Me(ctx context.Context, userID string) (userResponse, error)
 }
 
 func (svc *Service) Refresh(ctx context.Context, token string) (tokenResponse, error) {
+	if strings.TrimSpace(token) == "" {
+		return tokenResponse{}, ErrInvalidRefreshToken
+	}
+
 	tokenHash := hashToken(token)
 	userID, expiresAt, revoked, err := svc.repo.FindRefreshSession(ctx, tokenHash)
 	if err != nil || revoked || time.Now().After(expiresAt) {

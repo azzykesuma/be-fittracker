@@ -1,6 +1,6 @@
 # FitFlow Backend
 
-Backend API for the FitFlow habit and workout tracker. The frontend is intentionally kept in a separate folder/repository.
+Backend API for the FitFlow meal, workout, and body progress tracker. The frontend is intentionally kept in a separate folder/repository.
 
 ## Stack
 
@@ -51,7 +51,7 @@ For local development, keep Redis in Docker with `docker compose up -d redis`, o
 Planned MVP modules:
 
 - Auth: register, login, refresh, logout, current user
-- Habits: CRUD, completion logs, streaks, weekly completion
+- Meal logs: CRUD, calories by meal type, daily calorie totals
 - Workouts: plans, exercises, sessions, set logs
 - Progress: dashboard aggregates, body weight logs, chart data
 
@@ -71,5 +71,6 @@ Auth password encryption requires an RSA keypair:
 
 - PostgreSQL is the source of truth.
 - Redis should be used first for refresh/session support, then optional caching.
+- `REDIS_REQUIRED=false` lets local development continue when Redis is not running. Set it to `true` when Redis-backed features become required.
 - Elasticsearch should not block core API features; add it after the MVP routes are stable.
 - Do not log passwords, token values, authorization headers, or sensitive health details.
