@@ -64,7 +64,7 @@ func (handler *Handler) login(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, ErrInvalidCredentials) || errors.Is(err, ErrInvalidAuthRequest) {
 			slog.Warn("auth_login_rejected", "reason", err)
-			utils.WriteError(w, http.StatusUnauthorized, "unauthorized", "Unauthorized")
+			utils.WriteError(w, http.StatusUnauthorized, "invalid_credentials", "login failed check your info")
 			return
 		}
 		slog.Error("auth_login_failed", "error", err)
