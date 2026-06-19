@@ -22,6 +22,7 @@ import (
 	authmodule "be-fittracker/internal/modules/auth"
 	mealmodule "be-fittracker/internal/modules/meal"
 	progressmodule "be-fittracker/internal/modules/progress"
+	reportmodule "be-fittracker/internal/modules/report"
 	workoutmodule "be-fittracker/internal/modules/workout"
 	"be-fittracker/internal/utils"
 )
@@ -81,9 +82,10 @@ func main() {
 		authService := authmodule.NewService(authRepo, cfg.JWTSecret)
 		authHandler := authmodule.NewHandler(authService, cfg.JWTSecret)
 		r.Mount("/auth", authHandler.Routes())
+		r.Mount("/users", authHandler.UserRoutes())
 
 		mealRepo := mealmodule.NewRepository(db)
-		mealService := mealmodule.NewService(mealRepo)
+		mealService := mealmodule.NewService(mealRepo, redisClient)
 		mealHandler := mealmodule.NewHandler(mealService)
 		r.Mount("/meal-logs", mealHandler.Routes(cfg.JWTSecret))
 
@@ -94,10 +96,15 @@ func main() {
 		r.Mount("/exercises", workoutHandler.ExerciseRoutes(cfg.JWTSecret))
 
 		progressRepo := progressmodule.NewRepository(db)
-		progressService := progressmodule.NewService(progressRepo)
+		progressService := progressmodule.NewService(progressRepo, redisClient)
 		progressHandler := progressmodule.NewHandler(progressService)
 		r.Mount("/progress", progressHandler.Routes(cfg.JWTSecret))
 		r.Mount("/body-measurements", progressHandler.BodyMeasurementRoutes(cfg.JWTSecret))
+
+		reportRepo := reportmodule.NewRepository(db)
+		reportService := reportmodule.NewService(reportRepo)
+		reportHandler := reportmodule.NewHandler(reportService)
+		r.Mount("/reports", reportHandler.Routes(cfg.JWTSecret))
 	})
 
 	server := &http.Server{

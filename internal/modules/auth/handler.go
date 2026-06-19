@@ -64,7 +64,7 @@ func (handler *Handler) login(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, ErrInvalidCredentials) || errors.Is(err, ErrInvalidAuthRequest) {
 			slog.Warn("auth_login_rejected", "reason", err)
-			utils.WriteError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
+			utils.WriteError(w, http.StatusUnauthorized, "unauthorized", "Unauthorized")
 			return
 		}
 		slog.Error("auth_login_failed", "error", err)
@@ -163,4 +163,54 @@ func clearRefreshTokenCookie(w http.ResponseWriter, r *http.Request) {
 		Secure:   r.TLS != nil,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+func (handler *Handler) UserRoutes() chi.Router {
+	r := chi.NewRouter()
+	r.Use(appmiddleware.Auth(handler.jwtSecret))
+	r.Get("/me", handler.getUserProfile)
+	r.Patch("/me", handler.patchUserProfile)
+	return r
+}
+
+func (handler *Handler) getUserProfile(w http.ResponseWriter, r *http.Request) {
+	userID, ok := appmiddleware.UserID(r.Context())
+	if !ok {
+		utils.WriteError(w, http.StatusUnauthorized, "unauthorized", "Missing user context")
+		return
+	}
+
+	user, err := handler.service.Me(r.Context(), userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			utils.WriteError(w, http.StatusNotFound, "not_found", "User not found")
+			return
+		}
+		utils.WriteError(w, http.StatusInternalServerError, "profile_failed", "Failed to load profile")
+		return
+	}
+
+	utils.WriteJSON(w, http.StatusOK, map[string]any{"data": user})
+}
+
+func (handler *Handler) patchUserProfile(w http.ResponseWriter, r *http.Request) {
+	userID, ok := appmiddleware.UserID(r.Context())
+	if !ok {
+		utils.WriteError(w, http.StatusUnauthorized, "unauthorized", "Missing user context")
+		return
+	}
+
+	var req patchUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.WriteError(w, http.StatusBadRequest, "bad_request", "Invalid JSON body")
+		return
+	}
+
+	user, err := handler.service.UpdateProfile(r.Context(), userID, req)
+	if err != nil {
+		utils.WriteError(w, http.StatusBadRequest, "profile_update_failed", err.Error())
+		return
+	}
+
+	utils.WriteJSON(w, http.StatusOK, map[string]any{"data": user})
 }

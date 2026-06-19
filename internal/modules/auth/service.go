@@ -32,7 +32,8 @@ func NewService(repo *Repository, jwtSecret string) *Service {
 func (svc *Service) Register(ctx context.Context, req registerRequest) (tokenResponse, error) {
 	name := strings.TrimSpace(req.Name)
 	email := strings.ToLower(strings.TrimSpace(req.Email))
-	if name == "" || email == "" {
+	gender := strings.TrimSpace(strings.ToLower(req.Gender))
+	if name == "" || email == "" || (gender != "male" && gender != "female") {
 		return tokenResponse{}, ErrInvalidAuthRequest
 	}
 
@@ -55,7 +56,7 @@ func (svc *Service) Register(ctx context.Context, req registerRequest) (tokenRes
 		return tokenResponse{}, err
 	}
 
-	user, err := svc.repo.CreateUser(ctx, uuid.NewString(), name, email, passwordHash)
+	user, err := svc.repo.CreateUser(ctx, uuid.NewString(), name, email, passwordHash, gender)
 	if err != nil {
 		return tokenResponse{}, err
 	}
@@ -153,8 +154,66 @@ func (svc *Service) issueTokens(ctx context.Context, user userRecord) (tokenResp
 	return tokenResponse{AccessToken: accessToken, RefreshToken: refreshToken, User: toUserResponse(user)}, nil
 }
 
+func (svc *Service) UpdateProfile(ctx context.Context, userID string, req patchUserRequest) (userResponse, error) {
+	if err := req.validate(); err != nil {
+		return userResponse{}, err
+	}
+
+	user, err := svc.repo.FindUserByID(ctx, userID)
+	if err != nil {
+		return userResponse{}, err
+	}
+
+	name := user.Name
+	if req.Name != nil {
+		name = strings.TrimSpace(*req.Name)
+	}
+
+	fitnessGoal := user.FitnessGoal
+	if req.FitnessGoal != nil {
+		val := strings.TrimSpace(*req.FitnessGoal)
+		if val == "" {
+			fitnessGoal = nil
+		} else {
+			fitnessGoal = &val
+		}
+	}
+
+	heightCM := user.HeightCM
+	if req.HeightCM != nil {
+		heightCM = req.HeightCM
+	}
+
+	weightKG := user.WeightKG
+	if req.WeightKG != nil {
+		weightKG = req.WeightKG
+	}
+
+	gender := user.Gender
+	if req.Gender != nil {
+		gender = strings.TrimSpace(*req.Gender)
+	}
+
+	updatedUser, err := svc.repo.UpdateUser(ctx, userID, name, fitnessGoal, heightCM, weightKG, gender)
+	if err != nil {
+		return userResponse{}, err
+	}
+
+	return toUserResponse(updatedUser), nil
+}
+
 func toUserResponse(user userRecord) userResponse {
-	return userResponse{ID: user.ID, Name: user.Name, Email: user.Email, CreatedAt: user.CreatedAt}
+	return userResponse{
+		ID:          user.ID,
+		Name:        user.Name,
+		Email:       user.Email,
+		FitnessGoal: user.FitnessGoal,
+		HeightCM:    user.HeightCM,
+		WeightKG:    user.WeightKG,
+		Gender:      user.Gender,
+		CreatedAt:   user.CreatedAt,
+		UpdatedAt:   user.UpdatedAt,
+	}
 }
 
 func randomToken() (string, error) {

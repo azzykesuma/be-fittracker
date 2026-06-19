@@ -93,7 +93,8 @@ Request:
   "name": "Brian",
   "email": "brian@example.com",
   "password_encrypted": "base64-rsa-oaep-ciphertext",
-  "password_alg": "RSA-OAEP-SHA256"
+  "password_alg": "RSA-OAEP-SHA256",
+  "gender": "male"
 }
 ```
 
@@ -108,7 +109,9 @@ Response `201`:
       "id": "uuid",
       "name": "Brian",
       "email": "brian@example.com",
-      "created_at": "2026-06-11T00:00:00Z"
+      "gender": "male",
+      "created_at": "2026-06-11T00:00:00Z",
+      "updated_at": "2026-06-11T00:00:00Z"
     }
   }
 }
@@ -187,7 +190,7 @@ Response `200`:
 
 ### GET /api/users/me
 
-Status: `Planned`
+Status: `Implemented`
 
 Returns the current user profile. This can mirror `GET /api/auth/me` or replace it later.
 
@@ -202,6 +205,7 @@ Response `200`:
     "fitness_goal": "build_muscle",
     "height_cm": 175,
     "weight_kg": 78.5,
+    "gender": "male",
     "created_at": "2026-06-11T00:00:00Z",
     "updated_at": "2026-06-11T00:00:00Z"
   }
@@ -210,7 +214,7 @@ Response `200`:
 
 ### PATCH /api/users/me
 
-Status: `Planned`
+Status: `Implemented`
 
 Request:
 
@@ -219,7 +223,8 @@ Request:
   "name": "Brian",
   "fitness_goal": "build_muscle",
   "height_cm": 175,
-  "weight_kg": 78.5
+  "weight_kg": 78.5,
+  "gender": "female"
 }
 ```
 
@@ -698,7 +703,7 @@ Response `201` returns the created measurement.
 Calculation inputs:
 
 - `bmi`: requires `users.height_cm` and request `weight_kg`
-- `body_fat_percentage`: requires `users.height_cm`, `neck_cm`, and `waist_cm` or `belly_cm`; `hips_cm` is used when present
+- `body_fat_percentage`: calculated using the US Navy method. Requires `users.height_cm`, `neck_cm`, and `waist_cm` (or `belly_cm`). If `users.gender` is `"female"`, `hips_cm` is also required.
 
 ### GET /api/body-measurements/{id}
 
@@ -818,6 +823,17 @@ Query params:
 - `to`: optional date
 
 Response `200` returns exercise progression data.
+
+## Reports
+
+### GET /api/reports/summary
+
+Status: `Implemented`
+
+Downloads a personal fitness summary report containing profile overview, body measurements history, meal history, and workout logs inside a multi-tab Excel spreadsheet (`.xlsx` format).
+
+Response `200`:
+Binary stream (Content-Type: `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` as an attachment).
 
 ## Database Entity Mapping
 

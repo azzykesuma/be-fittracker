@@ -20,36 +20,52 @@ type userRecord struct {
 	Name         string
 	Email        string
 	PasswordHash string
+	FitnessGoal  *string
+	HeightCM     *int
+	WeightKG     *float64
+	Gender       string
 	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
-func (repo *Repository) CreateUser(ctx context.Context, id, name, email, passwordHash string) (userRecord, error) {
+func (repo *Repository) CreateUser(ctx context.Context, id, name, email, passwordHash, gender string) (userRecord, error) {
 	var user userRecord
 	err := repo.db.QueryRow(ctx, `
-		INSERT INTO users (id, name, email, password_hash)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, name, email, password_hash, created_at
-	`, id, name, email, passwordHash).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash, &user.CreatedAt)
+		INSERT INTO users (id, name, email, password_hash, gender)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, name, email, password_hash, fitness_goal, height_cm, weight_kg, gender, created_at, updated_at
+	`, id, name, email, passwordHash, gender).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash, &user.FitnessGoal, &user.HeightCM, &user.WeightKG, &user.Gender, &user.CreatedAt, &user.UpdatedAt)
 	return user, err
 }
 
 func (repo *Repository) FindUserByEmail(ctx context.Context, email string) (userRecord, error) {
 	var user userRecord
 	err := repo.db.QueryRow(ctx, `
-		SELECT id, name, email, password_hash, created_at
+		SELECT id, name, email, password_hash, fitness_goal, height_cm, weight_kg, gender, created_at, updated_at
 		FROM users
 		WHERE email = $1
-	`, email).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash, &user.CreatedAt)
+	`, email).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash, &user.FitnessGoal, &user.HeightCM, &user.WeightKG, &user.Gender, &user.CreatedAt, &user.UpdatedAt)
 	return user, err
 }
 
 func (repo *Repository) FindUserByID(ctx context.Context, id string) (userRecord, error) {
 	var user userRecord
 	err := repo.db.QueryRow(ctx, `
-		SELECT id, name, email, password_hash, created_at
+		SELECT id, name, email, password_hash, fitness_goal, height_cm, weight_kg, gender, created_at, updated_at
 		FROM users
 		WHERE id = $1
-	`, id).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash, &user.CreatedAt)
+	`, id).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash, &user.FitnessGoal, &user.HeightCM, &user.WeightKG, &user.Gender, &user.CreatedAt, &user.UpdatedAt)
+	return user, err
+}
+
+func (repo *Repository) UpdateUser(ctx context.Context, id string, name string, fitnessGoal *string, heightCM *int, weightKG *float64, gender string) (userRecord, error) {
+	var user userRecord
+	err := repo.db.QueryRow(ctx, `
+		UPDATE users
+		SET name = $2, fitness_goal = $3, height_cm = $4, weight_kg = $5, gender = $6, updated_at = NOW()
+		WHERE id = $1
+		RETURNING id, name, email, password_hash, fitness_goal, height_cm, weight_kg, gender, created_at, updated_at
+	`, id, name, fitnessGoal, heightCM, weightKG, gender).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash, &user.FitnessGoal, &user.HeightCM, &user.WeightKG, &user.Gender, &user.CreatedAt, &user.UpdatedAt)
 	return user, err
 }
 

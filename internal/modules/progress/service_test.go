@@ -58,7 +58,23 @@ func TestCalculateBMIReturnsNilWithoutHeight(t *testing.T) {
 	}
 }
 
-func TestEstimateBodyFatPercentage(t *testing.T) {
+func TestEstimateBodyFatPercentageMale(t *testing.T) {
+	heightCM := 175
+	neck := 38.0
+	waist := 84.0
+	bodyFat := estimateBodyFatPercentage(createBodyMeasurementRequest{
+		NeckCM:  &neck,
+		WaistCM: &waist,
+	}, &heightCM, "male")
+	if bodyFat == nil {
+		t.Fatal("expected body fat estimate")
+	}
+	if *bodyFat != 16.15 {
+		t.Fatalf("expected body fat 16.15, got %.2f", *bodyFat)
+	}
+}
+
+func TestEstimateBodyFatPercentageFemale(t *testing.T) {
 	heightCM := 175
 	neck := 38.0
 	waist := 84.0
@@ -67,9 +83,12 @@ func TestEstimateBodyFatPercentage(t *testing.T) {
 		NeckCM:  &neck,
 		WaistCM: &waist,
 		HipsCM:  &hips,
-	}, &heightCM)
+	}, &heightCM, "female")
 	if bodyFat == nil {
 		t.Fatal("expected body fat estimate")
+	}
+	if *bodyFat != 26.83 {
+		t.Fatalf("expected body fat 26.83, got %.2f", *bodyFat)
 	}
 }
 
@@ -79,7 +98,7 @@ func TestEstimateBodyFatPercentageReturnsNilWithoutHeight(t *testing.T) {
 	bodyFat := estimateBodyFatPercentage(createBodyMeasurementRequest{
 		NeckCM:  &neck,
 		WaistCM: &waist,
-	}, nil)
+	}, nil, "male")
 	if bodyFat != nil {
 		t.Fatalf("expected nil body fat without height, got %.2f", *bodyFat)
 	}

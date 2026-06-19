@@ -2,21 +2,25 @@ package progress
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/redis/go-redis/v9"
 )
 
 type Service struct {
-	repo *Repository
+	repo  *Repository
+	redis *redis.Client
 }
 
-func NewService(repo *Repository) *Service {
-	return &Service{repo: repo}
+func NewService(repo *Repository, rdb *redis.Client) *Service {
+	return &Service{repo: repo, redis: rdb}
 }
 
 type bodyMeasurementQuery struct {
@@ -88,7 +92,29 @@ func (svc *Service) BodyMeasurements(ctx context.Context, userID string, query b
 		return nil, errors.New("to must be on or after from")
 	}
 
-	return svc.repo.BodyMeasurementPoints(ctx, userID, from, to)
+	cacheKey := fmt.Sprintf("fitflow:progress:measurements:%s:%s:%s", userID, from.Format("2006-01-02"), to.Format("2006-01-02"))
+
+	if svc.redis != nil {
+		if val, err := svc.redis.Get(ctx, cacheKey).Result(); err == nil {
+			var cached []bodyMeasurementPoint
+			if err := json.Unmarshal([]byte(val), &cached); err == nil {
+				return cached, nil
+			}
+		}
+	}
+
+	points, err := svc.repo.BodyMeasurementPoints(ctx, userID, from, to)
+	if err != nil {
+		return nil, err
+	}
+
+	if svc.redis != nil {
+		if val, err := json.Marshal(points); err == nil {
+			_ = svc.redis.Set(ctx, cacheKey, val, 10*time.Minute).Err()
+		}
+	}
+
+	return points, nil
 }
 
 func (svc *Service) CreateBodyMeasurement(ctx context.Context, userID string, req createBodyMeasurementRequest) (bodyMeasurementResponse, error) {
@@ -106,11 +132,18 @@ func (svc *Service) CreateBodyMeasurement(ctx context.Context, userID string, re
 		return bodyMeasurementResponse{}, err
 	}
 	req.BMI = calculateBMI(req.WeightKG, profile.HeightCM)
-	req.BodyFatPercentage = estimateBodyFatPercentage(req, profile.HeightCM)
+	req.BodyFatPercentage = estimateBodyFatPercentage(req, profile.HeightCM, profile.Gender)
 
 	record, err := svc.repo.CreateBodyMeasurement(ctx, uuid.NewString(), userID, req, logDate)
 	if err != nil {
 		return bodyMeasurementResponse{}, err
+	}
+
+	if svc.redis != nil {
+		pattern := fmt.Sprintf("fitflow:progress:measurements:%s:*", userID)
+		if keys, err := svc.redis.Keys(ctx, pattern).Result(); err == nil && len(keys) > 0 {
+			_ = svc.redis.Del(ctx, keys...).Err()
+		}
 	}
 
 	req.LogDate = logDate.Format("2006-01-02")
@@ -149,8 +182,8 @@ func calculateBMI(weightKG float64, heightCM *int) *float64 {
 	return floatPtr(round2(weightKG / (heightM * heightM)))
 }
 
-func estimateBodyFatPercentage(req createBodyMeasurementRequest, heightCM *int) *float64 {
-	if heightCM == nil || *heightCM <= 0 || req.NeckCM == nil {
+func estimateBodyFatPercentage(req createBodyMeasurementRequest, heightCM *int, gender string) *float64 {
+	if heightCM == nil || *heightCM <= 0 || req.NeckCM == nil || *req.NeckCM <= 0 {
 		return nil
 	}
 
@@ -158,21 +191,30 @@ func estimateBodyFatPercentage(req createBodyMeasurementRequest, heightCM *int) 
 	if waist == nil {
 		waist = req.BellyCM
 	}
-	if waist == nil {
+	if waist == nil || *waist <= 0 {
 		return nil
 	}
 
 	height := float64(*heightCM)
-	if req.HipsCM != nil && *req.HipsCM > 0 && *waist > *req.NeckCM {
-		value := 495/(1.29579-0.35004*math.Log10(*waist+*req.HipsCM-*req.NeckCM)+0.22100*math.Log10(height)) - 450
+
+	if gender == "female" {
+		if req.HipsCM == nil || *req.HipsCM <= 0 {
+			return nil
+		}
+		term := *waist + *req.HipsCM - *req.NeckCM
+		if term <= 0 {
+			return nil
+		}
+		value := 495/(1.29579-0.35004*math.Log10(term)+0.22100*math.Log10(height)) - 450
 		return boundedPercentage(value)
 	}
 
-	if *waist <= *req.NeckCM {
+	// Default to male
+	term := *waist - *req.NeckCM
+	if term <= 0 {
 		return nil
 	}
-
-	value := 495/(1.0324-0.19077*math.Log10(*waist-*req.NeckCM)+0.15456*math.Log10(height)) - 450
+	value := 495/(1.0324-0.19077*math.Log10(term)+0.15456*math.Log10(height)) - 450
 	return boundedPercentage(value)
 }
 

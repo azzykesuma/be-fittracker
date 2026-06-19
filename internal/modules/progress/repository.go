@@ -22,6 +22,7 @@ type bodyMeasurementRecord struct {
 
 type userBodyProfile struct {
 	HeightCM *int
+	Gender   string
 }
 
 func NewRepository(db database.Querier) *Repository {
@@ -30,20 +31,22 @@ func NewRepository(db database.Querier) *Repository {
 
 func (repo *Repository) UserBodyProfile(ctx context.Context, userID string) (userBodyProfile, error) {
 	var height sql.NullInt32
+	var gender string
 	err := repo.db.QueryRow(ctx, `
-		SELECT height_cm
+		SELECT height_cm, gender
 		FROM users
 		WHERE id = $1
-	`, userID).Scan(&height)
+	`, userID).Scan(&height, &gender)
 	if err != nil {
 		return userBodyProfile{}, err
 	}
 
-	if !height.Valid {
-		return userBodyProfile{}, nil
+	var heightCM *int
+	if height.Valid {
+		heightVal := int(height.Int32)
+		heightCM = &heightVal
 	}
-	heightCM := int(height.Int32)
-	return userBodyProfile{HeightCM: &heightCM}, nil
+	return userBodyProfile{HeightCM: heightCM, Gender: gender}, nil
 }
 
 func (repo *Repository) LatestBodyMeasurementDate(ctx context.Context, userID string) (time.Time, error) {

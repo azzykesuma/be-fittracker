@@ -2,19 +2,23 @@ package meal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 )
 
 type Service struct {
-	repo *Repository
+	repo  *Repository
+	redis *redis.Client
 }
 
-func NewService(repo *Repository) *Service {
-	return &Service{repo: repo}
+func NewService(repo *Repository, rdb *redis.Client) *Service {
+	return &Service{repo: repo, redis: rdb}
 }
 
 func (svc *Service) Create(ctx context.Context, userID string, req mealLogRequest) (mealLogResponse, error) {
@@ -26,6 +30,9 @@ func (svc *Service) Create(ctx context.Context, userID string, req mealLogReques
 	if err != nil {
 		return mealLogResponse{}, err
 	}
+
+	svc.invalidateCache(ctx, userID)
+
 	return toMealLogResponse(record), nil
 }
 
@@ -39,6 +46,17 @@ func (svc *Service) List(ctx context.Context, userID string, fromValue string, t
 		return nil, errors.New("invalid meal_type")
 	}
 
+	cacheKey := fmt.Sprintf("fitflow:meal:list:%s:%s:%s:%s", userID, from.Format("2006-01-02"), to.Format("2006-01-02"), mealType)
+
+	if svc.redis != nil {
+		if val, err := svc.redis.Get(ctx, cacheKey).Result(); err == nil {
+			var cached []mealLogResponse
+			if err := json.Unmarshal([]byte(val), &cached); err == nil {
+				return cached, nil
+			}
+		}
+	}
+
 	records, err := svc.repo.List(ctx, userID, from, to, mealType)
 	if err != nil {
 		return nil, err
@@ -47,6 +65,13 @@ func (svc *Service) List(ctx context.Context, userID string, fromValue string, t
 	for _, record := range records {
 		items = append(items, toMealLogResponse(record))
 	}
+
+	if svc.redis != nil {
+		if val, err := json.Marshal(items); err == nil {
+			_ = svc.redis.Set(ctx, cacheKey, val, 10*time.Minute).Err()
+		}
+	}
+
 	return items, nil
 }
 
@@ -67,11 +92,18 @@ func (svc *Service) Update(ctx context.Context, id string, userID string, req me
 	if err != nil {
 		return mealLogResponse{}, err
 	}
+
+	svc.invalidateCache(ctx, userID)
+
 	return toMealLogResponse(record), nil
 }
 
 func (svc *Service) Delete(ctx context.Context, id string, userID string) error {
-	return svc.repo.Delete(ctx, id, userID)
+	err := svc.repo.Delete(ctx, id, userID)
+	if err == nil {
+		svc.invalidateCache(ctx, userID)
+	}
+	return err
 }
 
 func (svc *Service) CalorieSummary(ctx context.Context, userID string, dateValue string) (calorieSummaryResponse, error) {
@@ -79,6 +111,18 @@ func (svc *Service) CalorieSummary(ctx context.Context, userID string, dateValue
 	if err != nil {
 		return calorieSummaryResponse{}, err
 	}
+
+	cacheKey := fmt.Sprintf("fitflow:meal:calories:%s:%s", userID, date.Format("2006-01-02"))
+
+	if svc.redis != nil {
+		if val, err := svc.redis.Get(ctx, cacheKey).Result(); err == nil {
+			var cached calorieSummaryResponse
+			if err := json.Unmarshal([]byte(val), &cached); err == nil {
+				return cached, nil
+			}
+		}
+	}
+
 	byMealType, err := svc.repo.CalorieSummary(ctx, userID, date)
 	if err != nil {
 		return calorieSummaryResponse{}, err
@@ -87,7 +131,30 @@ func (svc *Service) CalorieSummary(ctx context.Context, userID string, dateValue
 	for _, calories := range byMealType {
 		total += calories
 	}
-	return calorieSummaryResponse{Date: date.Format("2006-01-02"), TotalCalories: total, ByMealType: byMealType}, nil
+	res := calorieSummaryResponse{Date: date.Format("2006-01-02"), TotalCalories: total, ByMealType: byMealType}
+
+	if svc.redis != nil {
+		if val, err := json.Marshal(res); err == nil {
+			_ = svc.redis.Set(ctx, cacheKey, val, 10*time.Minute).Err()
+		}
+	}
+
+	return res, nil
+}
+
+func (svc *Service) invalidateCache(ctx context.Context, userID string) {
+	if svc.redis == nil {
+		return
+	}
+	patterns := []string{
+		fmt.Sprintf("fitflow:meal:list:%s:*", userID),
+		fmt.Sprintf("fitflow:meal:calories:%s:*", userID),
+	}
+	for _, pattern := range patterns {
+		if keys, err := svc.redis.Keys(ctx, pattern).Result(); err == nil && len(keys) > 0 {
+			_ = svc.redis.Del(ctx, keys...).Err()
+		}
+	}
 }
 
 func validateMealLogRequest(req mealLogRequest) (mealLogRequest, time.Time, error) {
