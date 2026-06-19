@@ -2,6 +2,7 @@ package workout
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -222,3 +223,178 @@ func scanExercise(scanner exerciseScanner) (exerciseRecord, error) {
 }
 
 var _ exerciseScanner = pgx.Row(nil)
+
+type workoutSessionRecord struct {
+	ID              string
+	UserID          string
+	WorkoutPlanID   *string
+	WorkoutPlanName string
+	StartedAt       time.Time
+	FinishedAt      *time.Time
+	Status          string
+	Notes           string
+	UpdatedAt       time.Time
+}
+
+type workoutSetRecord struct {
+	ID               string
+	WorkoutSessionID string
+	ExerciseID       *string
+	ExerciseName     string
+	SetNumber        int
+	Reps             int
+	WeightKG         *float64
+	Completed        bool
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+func (repo *Repository) CreateSession(ctx context.Context, id string, userID string, planID string, notes string) (workoutSessionRecord, error) {
+	var record workoutSessionRecord
+	err := repo.db.QueryRow(ctx, `
+		WITH inserted AS (
+			INSERT INTO workout_sessions (id, user_id, workout_plan_id, notes)
+			VALUES ($1, $2, $3, NULLIF($4, ''))
+			RETURNING id, user_id, workout_plan_id, started_at, finished_at, status, notes, updated_at
+		)
+		SELECT i.id, i.user_id, i.workout_plan_id, COALESCE(wp.name, ''), i.started_at, i.finished_at, i.status, COALESCE(i.notes, ''), i.updated_at
+		FROM inserted i
+		LEFT JOIN workout_plans wp ON i.workout_plan_id = wp.id
+	`, id, userID, planID, notes).Scan(
+		&record.ID, &record.UserID, &record.WorkoutPlanID, &record.WorkoutPlanName,
+		&record.StartedAt, &record.FinishedAt, &record.Status, &record.Notes, &record.UpdatedAt,
+	)
+	return record, err
+}
+
+func (repo *Repository) ListSessions(ctx context.Context, userID string, fromDate string, toDate string, status string) ([]workoutSessionRecord, error) {
+	query := `
+		SELECT ws.id, ws.user_id, ws.workout_plan_id, COALESCE(wp.name, 'Deleted workout plan'), ws.started_at, ws.finished_at, ws.status, COALESCE(ws.notes, ''), ws.updated_at
+		FROM workout_sessions ws
+		LEFT JOIN workout_plans wp ON ws.workout_plan_id = wp.id
+		WHERE ws.user_id = $1
+	`
+	args := []any{userID}
+	argIndex := 2
+
+	if fromDate != "" {
+		query += fmt.Sprintf(" AND ws.started_at >= $%d::timestamptz", argIndex)
+		args = append(args, fromDate)
+		argIndex++
+	}
+	if toDate != "" {
+		query += fmt.Sprintf(" AND ws.started_at < ($%d::date + 1)::timestamptz", argIndex)
+		args = append(args, toDate)
+		argIndex++
+	}
+	if status != "" {
+		query += fmt.Sprintf(" AND ws.status = $%d", argIndex)
+		args = append(args, status)
+		argIndex++
+	}
+
+	query += " ORDER BY ws.started_at DESC"
+
+	rows, err := repo.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	records := []workoutSessionRecord{}
+	for rows.Next() {
+		var rec workoutSessionRecord
+		err := rows.Scan(
+			&rec.ID, &rec.UserID, &rec.WorkoutPlanID, &rec.WorkoutPlanName,
+			&rec.StartedAt, &rec.FinishedAt, &rec.Status, &rec.Notes, &rec.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, rec)
+	}
+	return records, rows.Err()
+}
+
+func (repo *Repository) FindSession(ctx context.Context, id string, userID string) (workoutSessionRecord, error) {
+	var record workoutSessionRecord
+	err := repo.db.QueryRow(ctx, `
+		SELECT ws.id, ws.user_id, ws.workout_plan_id, COALESCE(wp.name, 'Deleted workout plan'), ws.started_at, ws.finished_at, ws.status, COALESCE(ws.notes, ''), ws.updated_at
+		FROM workout_sessions ws
+		LEFT JOIN workout_plans wp ON ws.workout_plan_id = wp.id
+		WHERE ws.id = $1 AND ws.user_id = $2
+	`, id, userID).Scan(
+		&record.ID, &record.UserID, &record.WorkoutPlanID, &record.WorkoutPlanName,
+		&record.StartedAt, &record.FinishedAt, &record.Status, &record.Notes, &record.UpdatedAt,
+	)
+	return record, err
+}
+
+func (repo *Repository) CreateSetLog(ctx context.Context, id string, sessionID string, exerciseID *string, req logSetRequest) (workoutSetRecord, error) {
+	var record workoutSetRecord
+	completed := true
+	if req.Completed != nil {
+		completed = *req.Completed
+	}
+	err := repo.db.QueryRow(ctx, `
+		INSERT INTO workout_set_logs (id, workout_session_id, exercise_id, exercise_name, set_number, reps, weight_kg, completed)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id, workout_session_id, exercise_id, exercise_name, set_number, reps, weight_kg::float8, completed, created_at, updated_at
+	`, id, sessionID, exerciseID, req.ExerciseName, req.SetNumber, req.Reps, req.WeightKG, completed).Scan(
+		&record.ID, &record.WorkoutSessionID, &record.ExerciseID, &record.ExerciseName,
+		&record.SetNumber, &record.Reps, &record.WeightKG, &record.Completed, &record.CreatedAt, &record.UpdatedAt,
+	)
+	return record, err
+}
+
+func (repo *Repository) ListSetLogs(ctx context.Context, sessionID string) ([]workoutSetRecord, error) {
+	rows, err := repo.db.Query(ctx, `
+		SELECT id, workout_session_id, exercise_id, exercise_name, set_number, reps, weight_kg::float8, completed, created_at, updated_at
+		FROM workout_set_logs
+		WHERE workout_session_id = $1
+		ORDER BY created_at ASC, set_number ASC
+	`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	records := []workoutSetRecord{}
+	for rows.Next() {
+		var record workoutSetRecord
+		err := rows.Scan(
+			&record.ID, &record.WorkoutSessionID, &record.ExerciseID, &record.ExerciseName,
+			&record.SetNumber, &record.Reps, &record.WeightKG, &record.Completed, &record.CreatedAt, &record.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	return records, rows.Err()
+}
+
+func (repo *Repository) FinishSession(ctx context.Context, id string, userID string, notes string) (workoutSessionRecord, error) {
+	var record workoutSessionRecord
+	err := repo.db.QueryRow(ctx, `
+		WITH updated AS (
+			UPDATE workout_sessions
+			SET status = 'finished', finished_at = NOW(), notes = COALESCE(NULLIF($3, ''), notes), updated_at = NOW()
+			WHERE id = $1 AND user_id = $2
+			RETURNING id, user_id, workout_plan_id, started_at, finished_at, status, notes, updated_at
+		)
+		SELECT u.id, u.user_id, u.workout_plan_id, COALESCE(wp.name, 'Deleted workout plan'), u.started_at, u.finished_at, u.status, COALESCE(u.notes, ''), u.updated_at
+		FROM updated u
+		LEFT JOIN workout_plans wp ON u.workout_plan_id = wp.id
+	`, id, userID, notes).Scan(
+		&record.ID, &record.UserID, &record.WorkoutPlanID, &record.WorkoutPlanName,
+		&record.StartedAt, &record.FinishedAt, &record.Status, &record.Notes, &record.UpdatedAt,
+	)
+	return record, err
+}
+
+func (repo *Repository) DeleteSession(ctx context.Context, id string, userID string) error {
+	_, err := repo.db.Exec(ctx, `DELETE FROM workout_sessions WHERE id = $1 AND user_id = $2`, id, userID)
+	return err
+}
+

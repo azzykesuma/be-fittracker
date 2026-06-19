@@ -41,3 +41,60 @@ type exerciseResponse struct {
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 }
+
+type startSessionRequest struct {
+	WorkoutPlanID string `json:"workout_plan_id"`
+	Notes         string `json:"notes"`
+}
+
+type listSessionsFilter struct {
+	From   string
+	To     string
+	Status string
+}
+
+type workoutSessionResponse struct {
+	ID              string     `json:"id"`
+	WorkoutPlanID   *string    `json:"workout_plan_id,omitempty"`
+	WorkoutPlanName string     `json:"workout_plan_name,omitempty"`
+	StartedAt       time.Time  `json:"started_at"`
+	FinishedAt      *time.Time `json:"finished_at,omitempty"`
+	Status          string     `json:"status"`
+	Notes           string     `json:"notes,omitempty"`
+}
+
+type workoutSessionDetailResponse struct {
+	ID              string               `json:"id"`
+	WorkoutPlanID   *string              `json:"workout_plan_id,omitempty"`
+	WorkoutPlanName string               `json:"workout_plan_name,omitempty"`
+	StartedAt       time.Time            `json:"started_at"`
+	FinishedAt      *time.Time           `json:"finished_at,omitempty"`
+	Status          string               `json:"status"`
+	Notes           string               `json:"notes,omitempty"`
+	Sets            []workoutSetResponse `json:"sets"`
+}
+
+type logSetRequest struct {
+	ExerciseID   string   `json:"exercise_id"`
+	ExerciseName string   `json:"exercise_name"`
+	SetNumber    int      `json:"set_number"`
+	Reps         int      `json:"reps"`
+	WeightKG     *float64 `json:"weight_kg"`
+	Completed    *bool    `json:"completed"`
+}
+
+type workoutSetResponse struct {
+	ID           string    `json:"id"`
+	ExerciseID   *string   `json:"exercise_id,omitempty"`
+	ExerciseName string    `json:"exercise_name"`
+	SetNumber    int       `json:"set_number"`
+	Reps         int       `json:"reps"`
+	WeightKG     *float64  `json:"weight_kg,omitempty"`
+	Completed    bool      `json:"completed"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+type finishSessionRequest struct {
+	Notes string `json:"notes"`
+}
+

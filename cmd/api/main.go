@@ -94,6 +94,7 @@ func main() {
 		workoutHandler := workoutmodule.NewHandler(workoutService)
 		r.Mount("/workout-plans", workoutHandler.PlanRoutes(cfg.JWTSecret))
 		r.Mount("/exercises", workoutHandler.ExerciseRoutes(cfg.JWTSecret))
+		r.Mount("/workout-sessions", workoutHandler.SessionRoutes(cfg.JWTSecret))
 
 		progressRepo := progressmodule.NewRepository(db)
 		progressService := progressmodule.NewService(progressRepo, redisClient)

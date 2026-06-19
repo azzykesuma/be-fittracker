@@ -200,3 +200,126 @@ func writeNotFoundOrServerError(w http.ResponseWriter, err error, code string, m
 	}
 	utils.WriteError(w, http.StatusInternalServerError, code, message)
 }
+
+func (handler *Handler) SessionRoutes(jwtSecret string) chi.Router {
+	r := chi.NewRouter()
+	r.Use(appmiddleware.Auth(jwtSecret))
+	r.Post("/start", handler.startSession)
+	r.Get("/", handler.listSessions)
+	r.Get("/{id}", handler.findSession)
+	r.Post("/{id}/sets", handler.logSet)
+	r.Put("/{id}/finish", handler.finishSession)
+	r.Delete("/{id}", handler.deleteSession)
+	return r
+}
+
+func (handler *Handler) startSession(w http.ResponseWriter, r *http.Request) {
+	userID, ok := userIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	var req startSessionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.WriteError(w, http.StatusBadRequest, "bad_request", "Invalid JSON body")
+		return
+	}
+	item, err := handler.service.StartSession(r.Context(), userID, req)
+	if err != nil {
+		utils.WriteError(w, http.StatusBadRequest, "workout_session_start_failed", err.Error())
+		return
+	}
+	utils.WriteJSON(w, http.StatusCreated, map[string]any{"data": item})
+}
+
+func (handler *Handler) listSessions(w http.ResponseWriter, r *http.Request) {
+	userID, ok := userIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	filter := listSessionsFilter{
+		From:   r.URL.Query().Get("from"),
+		To:     r.URL.Query().Get("to"),
+		Status: r.URL.Query().Get("status"),
+	}
+	items, err := handler.service.ListSessions(r.Context(), userID, filter)
+	if err != nil {
+		utils.WriteError(w, http.StatusBadRequest, "workout_sessions_failed", err.Error())
+		return
+	}
+	utils.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
+}
+
+func (handler *Handler) findSession(w http.ResponseWriter, r *http.Request) {
+	userID, ok := userIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	item, err := handler.service.FindSession(r.Context(), chi.URLParam(r, "id"), userID)
+	if err != nil {
+		writeNotFoundOrServerError(w, err, "workout_session_not_found", "Workout session not found")
+		return
+	}
+	utils.WriteJSON(w, http.StatusOK, map[string]any{"data": item})
+}
+
+func (handler *Handler) logSet(w http.ResponseWriter, r *http.Request) {
+	userID, ok := userIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	var req logSetRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.WriteError(w, http.StatusBadRequest, "bad_request", "Invalid JSON body")
+		return
+	}
+	item, err := handler.service.LogSet(r.Context(), chi.URLParam(r, "id"), userID, req)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			utils.WriteError(w, http.StatusNotFound, "workout_session_not_found", "Workout session not found")
+			return
+		}
+		utils.WriteError(w, http.StatusBadRequest, "workout_set_log_failed", err.Error())
+		return
+	}
+	utils.WriteJSON(w, http.StatusCreated, map[string]any{"data": item})
+}
+
+func (handler *Handler) finishSession(w http.ResponseWriter, r *http.Request) {
+	userID, ok := userIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	var req finishSessionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.WriteError(w, http.StatusBadRequest, "bad_request", "Invalid JSON body")
+		return
+	}
+	item, err := handler.service.FinishSession(r.Context(), chi.URLParam(r, "id"), userID, req)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			utils.WriteError(w, http.StatusNotFound, "workout_session_not_found", "Workout session not found")
+			return
+		}
+		utils.WriteError(w, http.StatusBadRequest, "workout_session_finish_failed", err.Error())
+		return
+	}
+	utils.WriteJSON(w, http.StatusOK, map[string]any{"data": item})
+}
+
+func (handler *Handler) deleteSession(w http.ResponseWriter, r *http.Request) {
+	userID, ok := userIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	err := handler.service.DeleteSession(r.Context(), chi.URLParam(r, "id"), userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			utils.WriteError(w, http.StatusNotFound, "workout_session_not_found", "Workout session not found")
+			return
+		}
+		utils.WriteError(w, http.StatusInternalServerError, "workout_session_delete_failed", "Failed to delete workout session")
+		return
+	}
+	utils.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"success": true}})
+}
+

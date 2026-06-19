@@ -182,3 +182,166 @@ func toExerciseResponses(records []exerciseRecord) []exerciseResponse {
 func toExerciseResponse(record exerciseRecord) exerciseResponse {
 	return exerciseResponse{ID: record.ID, WorkoutPlanID: record.WorkoutPlanID, Name: record.Name, MuscleGroup: record.MuscleGroup, TargetSets: record.TargetSets, TargetReps: record.TargetReps, TargetWeightKG: record.TargetWeightKG, RestSeconds: record.RestSeconds, OrderIndex: record.OrderIndex, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
 }
+
+func (svc *Service) StartSession(ctx context.Context, userID string, req startSessionRequest) (workoutSessionResponse, error) {
+	req.WorkoutPlanID = strings.TrimSpace(req.WorkoutPlanID)
+	if req.WorkoutPlanID == "" {
+		return workoutSessionResponse{}, errors.New("workout_plan_id is required")
+	}
+	exists, err := svc.repo.PlanBelongsToUser(ctx, req.WorkoutPlanID, userID)
+	if err != nil {
+		return workoutSessionResponse{}, err
+	}
+	if !exists {
+		return workoutSessionResponse{}, errors.New("workout plan not found")
+	}
+	record, err := svc.repo.CreateSession(ctx, uuid.NewString(), userID, req.WorkoutPlanID, req.Notes)
+	if err != nil {
+		return workoutSessionResponse{}, err
+	}
+	return toSessionResponse(record), nil
+}
+
+func (svc *Service) ListSessions(ctx context.Context, userID string, filter listSessionsFilter) ([]workoutSessionResponse, error) {
+	filter.Status = strings.TrimSpace(strings.ToLower(filter.Status))
+	if filter.Status != "" && filter.Status != "in_progress" && filter.Status != "finished" && filter.Status != "cancelled" {
+		return nil, errors.New("invalid status")
+	}
+	records, err := svc.repo.ListSessions(ctx, userID, filter.From, filter.To, filter.Status)
+	if err != nil {
+		return nil, err
+	}
+	responses := make([]workoutSessionResponse, 0, len(records))
+	for _, r := range records {
+		responses = append(responses, toSessionResponse(r))
+	}
+	return responses, nil
+}
+
+func (svc *Service) FindSession(ctx context.Context, id string, userID string) (workoutSessionDetailResponse, error) {
+	record, err := svc.repo.FindSession(ctx, id, userID)
+	if err != nil {
+		return workoutSessionDetailResponse{}, err
+	}
+	sets, err := svc.repo.ListSetLogs(ctx, record.ID)
+	if err != nil {
+		return workoutSessionDetailResponse{}, err
+	}
+	return toSessionDetailResponse(record, toSetResponses(sets)), nil
+}
+
+func (svc *Service) LogSet(ctx context.Context, sessionID string, userID string, req logSetRequest) (workoutSetResponse, error) {
+	_, err := svc.repo.FindSession(ctx, sessionID, userID)
+	if err != nil {
+		return workoutSetResponse{}, err
+	}
+
+	req.ExerciseName = strings.TrimSpace(req.ExerciseName)
+	req.ExerciseID = strings.TrimSpace(req.ExerciseID)
+
+	var exerciseName string
+	if req.ExerciseName != "" {
+		exerciseName = req.ExerciseName
+	} else if req.ExerciseID != "" {
+		err := svc.repo.db.QueryRow(ctx, `
+			SELECT e.name 
+			FROM exercises e
+			JOIN workout_plans wp ON e.workout_plan_id = wp.id
+			WHERE e.id = $1 AND wp.user_id = $2
+		`, req.ExerciseID, userID).Scan(&exerciseName)
+		if err != nil {
+			exerciseName = "Unknown exercise"
+		}
+	} else {
+		return workoutSetResponse{}, errors.New("exercise_name or exercise_id is required")
+	}
+	req.ExerciseName = exerciseName
+
+	if req.SetNumber <= 0 {
+		return workoutSetResponse{}, errors.New("set_number must be greater than 0")
+	}
+	if req.Reps < 0 {
+		return workoutSetResponse{}, errors.New("reps must be non-negative")
+	}
+	if req.WeightKG != nil && *req.WeightKG < 0 {
+		return workoutSetResponse{}, errors.New("weight_kg must be non-negative")
+	}
+
+	var exerciseIDPtr *string
+	if req.ExerciseID != "" {
+		exerciseIDPtr = &req.ExerciseID
+	}
+
+	record, err := svc.repo.CreateSetLog(ctx, uuid.NewString(), sessionID, exerciseIDPtr, req)
+	if err != nil {
+		return workoutSetResponse{}, err
+	}
+	return toSetResponse(record), nil
+}
+
+func (svc *Service) FinishSession(ctx context.Context, id string, userID string, req finishSessionRequest) (workoutSessionResponse, error) {
+	_, err := svc.repo.FindSession(ctx, id, userID)
+	if err != nil {
+		return workoutSessionResponse{}, err
+	}
+	record, err := svc.repo.FinishSession(ctx, id, userID, req.Notes)
+	if err != nil {
+		return workoutSessionResponse{}, err
+	}
+	return toSessionResponse(record), nil
+}
+
+func (svc *Service) DeleteSession(ctx context.Context, id string, userID string) error {
+	_, err := svc.repo.FindSession(ctx, id, userID)
+	if err != nil {
+		return err
+	}
+	return svc.repo.DeleteSession(ctx, id, userID)
+}
+
+func toSessionResponse(record workoutSessionRecord) workoutSessionResponse {
+	return workoutSessionResponse{
+		ID:              record.ID,
+		WorkoutPlanID:   record.WorkoutPlanID,
+		WorkoutPlanName: record.WorkoutPlanName,
+		StartedAt:       record.StartedAt,
+		FinishedAt:      record.FinishedAt,
+		Status:          record.Status,
+		Notes:           record.Notes,
+	}
+}
+
+func toSessionDetailResponse(record workoutSessionRecord, sets []workoutSetResponse) workoutSessionDetailResponse {
+	return workoutSessionDetailResponse{
+		ID:              record.ID,
+		WorkoutPlanID:   record.WorkoutPlanID,
+		WorkoutPlanName: record.WorkoutPlanName,
+		StartedAt:       record.StartedAt,
+		FinishedAt:      record.FinishedAt,
+		Status:          record.Status,
+		Notes:           record.Notes,
+		Sets:            sets,
+	}
+}
+
+func toSetResponses(records []workoutSetRecord) []workoutSetResponse {
+	responses := make([]workoutSetResponse, 0, len(records))
+	for _, r := range records {
+		responses = append(responses, toSetResponse(r))
+	}
+	return responses
+}
+
+func toSetResponse(record workoutSetRecord) workoutSetResponse {
+	return workoutSetResponse{
+		ID:           record.ID,
+		ExerciseID:   record.ExerciseID,
+		ExerciseName: record.ExerciseName,
+		SetNumber:    record.SetNumber,
+		Reps:         record.Reps,
+		WeightKG:     record.WeightKG,
+		Completed:    record.Completed,
+		CreatedAt:    record.CreatedAt,
+	}
+}
+
