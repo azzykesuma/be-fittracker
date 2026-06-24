@@ -23,6 +23,7 @@ func (handler *Handler) Routes(jwtSecret string) chi.Router {
 	r.Use(appmiddleware.Auth(jwtSecret))
 	r.Get("/body-measurements", handler.bodyMeasurements)
 	r.Post("/body-measurements", handler.createBodyMeasurement)
+	r.Get("/photos", handler.progressPhotos)
 	return r
 }
 
@@ -72,4 +73,20 @@ func (handler *Handler) createBodyMeasurement(w http.ResponseWriter, r *http.Req
 	}
 
 	utils.WriteJSON(w, http.StatusCreated, map[string]any{"data": measurement})
+}
+
+func (handler *Handler) progressPhotos(w http.ResponseWriter, r *http.Request) {
+	userID, ok := appmiddleware.UserID(r.Context())
+	if !ok {
+		utils.WriteError(w, http.StatusUnauthorized, "unauthorized", "Missing user context")
+		return
+	}
+
+	items, err := handler.service.ProgressPhotos(r.Context(), userID)
+	if err != nil {
+		utils.WriteError(w, http.StatusBadRequest, "progress_photos_failed", err.Error())
+		return
+	}
+
+	utils.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }

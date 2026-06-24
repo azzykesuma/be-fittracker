@@ -85,17 +85,18 @@ func (repo *Repository) CreateBodyMeasurement(ctx context.Context, id string, us
 			left_calf_cm,
 			right_calf_cm,
 			notes,
-			log_date
+			log_date,
+			image_url
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NULLIF($20, ''), $21)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NULLIF($20, ''), $21, NULLIF($22, ''))
 		RETURNING id, created_at, updated_at
-	`, id, userID, req.WeightKG, req.BMI, req.BodyFatPercentage, req.NeckCM, req.ShoulderCM, req.ChestCM, req.WaistCM, req.BellyCM, req.HipsCM, req.LeftBicepCM, req.RightBicepCM, req.LeftForearmCM, req.RightForearmCM, req.LeftThighCM, req.RightThighCM, req.LeftCalfCM, req.RightCalfCM, req.Notes, logDate).Scan(&record.ID, &record.CreatedAt, &record.UpdatedAt)
+	`, id, userID, req.WeightKG, req.BMI, req.BodyFatPercentage, req.NeckCM, req.ShoulderCM, req.ChestCM, req.WaistCM, req.BellyCM, req.HipsCM, req.LeftBicepCM, req.RightBicepCM, req.LeftForearmCM, req.RightForearmCM, req.LeftThighCM, req.RightThighCM, req.LeftCalfCM, req.RightCalfCM, req.Notes, logDate, req.ImageURL).Scan(&record.ID, &record.CreatedAt, &record.UpdatedAt)
 	return record, err
 }
 
 func (repo *Repository) BodyMeasurementPoints(ctx context.Context, userID string, from time.Time, to time.Time) ([]bodyMeasurementPoint, error) {
 	rows, err := repo.db.Query(ctx, `
-		SELECT log_date, weight_kg::float8, bmi::float8, body_fat_percentage::float8, waist_cm::float8
+		SELECT log_date, weight_kg::float8, bmi::float8, body_fat_percentage::float8, waist_cm::float8, image_url
 		FROM body_measurement_logs
 		WHERE user_id = $1 AND log_date BETWEEN $2 AND $3
 		ORDER BY log_date ASC
@@ -112,7 +113,8 @@ func (repo *Repository) BodyMeasurementPoints(ctx context.Context, userID string
 		var bmi pgtype.Float8
 		var bodyFat pgtype.Float8
 		var waist pgtype.Float8
-		if err := rows.Scan(&logDate, &weight, &bmi, &bodyFat, &waist); err != nil {
+		var imageURL pgtype.Text
+		if err := rows.Scan(&logDate, &weight, &bmi, &bodyFat, &waist, &imageURL); err != nil {
 			return nil, err
 		}
 
@@ -122,6 +124,40 @@ func (repo *Repository) BodyMeasurementPoints(ctx context.Context, userID string
 			BMI:               nullableFloat64(bmi),
 			BodyFatPercentage: nullableFloat64(bodyFat),
 			WaistCM:           nullableFloat64(waist),
+			ImageURL:          nullableString(imageURL),
+		})
+	}
+
+	return items, rows.Err()
+}
+
+func (repo *Repository) ProgressPhotos(ctx context.Context, userID string) ([]progressPhotoPoint, error) {
+	rows, err := repo.db.Query(ctx, `
+		SELECT log_date, image_url, weight_kg::float8, body_fat_percentage::float8
+		FROM body_measurement_logs
+		WHERE user_id = $1 AND image_url IS NOT NULL AND image_url != ''
+		ORDER BY log_date ASC
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := []progressPhotoPoint{}
+	for rows.Next() {
+		var logDate time.Time
+		var imageURL string
+		var weight pgtype.Float8
+		var bodyFat pgtype.Float8
+		if err := rows.Scan(&logDate, &imageURL, &weight, &bodyFat); err != nil {
+			return nil, err
+		}
+
+		items = append(items, progressPhotoPoint{
+			Date:              logDate.Format("2006-01-02"),
+			ImageURL:          imageURL,
+			WeightKG:          nullableFloat64(weight),
+			BodyFatPercentage: nullableFloat64(bodyFat),
 		})
 	}
 
@@ -133,4 +169,11 @@ func nullableFloat64(value pgtype.Float8) *float64 {
 		return nil
 	}
 	return &value.Float64
+}
+
+func nullableString(value pgtype.Text) *string {
+	if !value.Valid {
+		return nil
+	}
+	return &value.String
 }

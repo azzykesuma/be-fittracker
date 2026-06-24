@@ -34,6 +34,14 @@ type bodyMeasurementPoint struct {
 	BMI               *float64 `json:"bmi"`
 	BodyFatPercentage *float64 `json:"body_fat_percentage"`
 	WaistCM           *float64 `json:"waist_cm"`
+	ImageURL          *string  `json:"image_url,omitempty"`
+}
+
+type progressPhotoPoint struct {
+	Date              string   `json:"date"`
+	ImageURL          string   `json:"image_url"`
+	WeightKG          *float64 `json:"weight_kg,omitempty"`
+	BodyFatPercentage *float64 `json:"body_fat_percentage,omitempty"`
 }
 
 type createBodyMeasurementRequest struct {
@@ -56,6 +64,7 @@ type createBodyMeasurementRequest struct {
 	RightCalfCM       *float64 `json:"right_calf_cm"`
 	Notes             string   `json:"notes"`
 	LogDate           string   `json:"log_date"`
+	ImageURL          string   `json:"image_url"`
 }
 
 type bodyMeasurementResponse struct {
@@ -79,6 +88,7 @@ type bodyMeasurementResponse struct {
 	RightCalfCM       *float64 `json:"right_calf_cm,omitempty"`
 	Notes             string   `json:"notes,omitempty"`
 	LogDate           string   `json:"log_date"`
+	ImageURL          string   `json:"image_url,omitempty"`
 	CreatedAt         string   `json:"created_at"`
 	UpdatedAt         string   `json:"updated_at"`
 }
@@ -115,6 +125,10 @@ func (svc *Service) BodyMeasurements(ctx context.Context, userID string, query b
 	}
 
 	return points, nil
+}
+
+func (svc *Service) ProgressPhotos(ctx context.Context, userID string) ([]progressPhotoPoint, error) {
+	return svc.repo.ProgressPhotos(ctx, userID)
 }
 
 func (svc *Service) CreateBodyMeasurement(ctx context.Context, userID string, req createBodyMeasurementRequest) (bodyMeasurementResponse, error) {
@@ -168,6 +182,7 @@ func (svc *Service) CreateBodyMeasurement(ctx context.Context, userID string, re
 		RightCalfCM:       req.RightCalfCM,
 		Notes:             req.Notes,
 		LogDate:           req.LogDate,
+		ImageURL:          req.ImageURL,
 		CreatedAt:         record.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:         record.UpdatedAt.Format(time.RFC3339),
 	}, nil

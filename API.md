@@ -692,11 +692,12 @@ Request:
   "left_calf_cm": 38,
   "right_calf_cm": 38,
   "notes": "Morning measurement",
-  "log_date": "2026-06-15"
+  "log_date": "2026-06-15",
+  "image_url": "https://sovopppasmksziewyact.supabase.co/storage/v1/object/public/progress-photos/user123/2026-06-15.jpg"
 }
 ```
 
-Response `201` returns the created measurement.
+Response `201` returns the created measurement including the `image_url` if uploaded.
 
 `bmi` and `body_fat_percentage` are calculated by the backend when enough data is available. Do not send them from the frontend.
 
@@ -805,7 +806,8 @@ Response `200` returns body measurement chart data for weight, BMI, body fat per
       "weight_kg": 78.5,
       "bmi": 25.63,
       "body_fat_percentage": 18.5,
-      "waist_cm": 84
+      "waist_cm": 84,
+      "image_url": "https://sovopppasmksziewyact.supabase.co/storage/v1/object/public/progress-photos/user123/2026-06-15.jpg"
     }
   ]
 }
